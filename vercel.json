@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/appledown.js",
+      "src": "index.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/appledown/download",
-      "dest": "api/appledown.js"
+      "src": "/api/(.*)",
+      "dest": "/index.js"
     }
   ]
 }
