@@ -1,108 +1,79 @@
-const express = require('express');
 const axios = require('axios');
-const cors = require('cors');
+const cheerio = require('cheerio');
+const qs = require('qs');
 
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Enable CORS
-app.use(cors());
-
-const formatAudio = ['mp3', 'm4a', 'webm', 'acc', 'flac', 'opus', 'ogg', 'wav', '4k'];
-const formatVideo = ['360', '480', '720', '1080', '1440'];
-
-const appleMusicDownloader = async (url) => {
-  try {
-    const response = await axios.get(`https://api.applemusicdownloader.com/download?url=${url}`);
-    const data = response.data;
-    return {
-      success: true,
-      fitur: "applemusic",
-      title: data.title,
-      artist: data.artist,
-      thumbnail: data.thumbnail,
-      downloadUrl: data.downloadUrl
-    };
-  } catch (error) {
-    console.error("Error:", error.response ? error.response.data : error.message);
-    return { success: false, message: error.message };
-  }
-};
-
-const youtubeDownloader = {
-  download: async (url, format) => {
+const appledown = {
+  getData: async (urls) => {
+    const url = `https://aaplmusicdownloader.com/api/applesearch.php?url=${urls}`;
     try {
-      const response = await axios.get(`https://p.oceansaver.in/ajax/download.php?copyright=0&format=${format}&url=${url}`, {
-        headers: {
-          'User-Agent': 'MyApp/1.0',
-          'Referer': 'https://ddownr.com/enW7/youtube-video-downloader'
-        }
-      });
-
-      const data = response.data;
-      const media = await youtubeDownloader.cekProgress(data.id);
-      return {
-        success: true,
-        fitur: "youtube",
-        format: format,
-        title: data.title,
-        thumbnail: data.info.image,
-        downloadUrl: media
-      };
+        const response = await axios.get(url, {
+            headers: {
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'X-Requested-With': 'XMLHttpRequest',
+                'User-Agent': 'MyApp/1.0',
+                'Referer': 'https://aaplmusicdownloader.com/'
+            }
+        });
+        return response.data;
     } catch (error) {
-      console.error("Error:", error.response ? error.response.data : error.message);
-      return { success: false, message: error.message };
+        return { success: false, message: error.message };
     }
   },
-  cekProgress: async (id) => {
+  getAudio: async (trackName, artist, urlMusic, token) => {
+    const url = 'https://aaplmusicdownloader.com/api/composer/swd.php';
+    const data = {
+        song_name: trackName,
+        artist_name: artist,
+        url: urlMusic,
+        token: token
+    };
+    const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+        'User-Agent': 'MyApp/1.0',
+        'Referer': 'https://aaplmusicdownloader.com/song.php#'
+    };
     try {
-      const progressResponse = await axios.get(`https://p.oceansaver.in/ajax/progress.php?id=${id}`, {
-        headers: {
-          'User-Agent': 'MyApp/1.0',
-          'Referer': 'https://ddownr.com/enW7/youtube-video-downloader'
-        }
-      });
-
-      const data = progressResponse.data;
-
-      if (data.progress === 1000) {
-        return data.download_url;
-      } else {
-        console.log('Masih belum selesai wak 😂, sabar gw cek lagi...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return youtubeDownloader.cekProgress(id);
-      }
+        const response = await axios.post(url, qs.stringify(data), { headers });
+        return response.data.dlink;
     } catch (error) {
-      console.error("Error:", error.response ? error.response.data : error.message);
-      return { success: false, message: error.message };
+        return { success: false, message: error.message };
+    }
+  },
+  download: async (req, res) => {
+    const urls = req.query.url;
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Mendukung CORS
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    const musicData = await appledown.getData(urls);
+    if (musicData) {
+        // Ekstraksi data lainnya dan generate link
+        const downloadLink = await appledown.getAudio(musicData.name, musicData.artist, urls, musicData.token);
+        const extractedData = {
+            name: musicData.name,
+            albumname: musicData.albumname,
+            artist: musicData.artist,
+            thumb: musicData.thumb,
+            duration: musicData.duration,
+            url: urls,
+            downloadLink: downloadLink.replace(/ /g, '%20') // Ganti spasi dengan %20
+        };
+        res.json(extractedData);
+    } else {
+        res.json({ success: false, message: "Data tidak ditemukan" });
     }
   }
 };
 
-app.get('/api/appledown/download', async (req, res) => {
-  const { url, fitur, format } = req.query;
-
-  if (!url || !fitur) {
-    return res.status(400).json({ success: false, message: "URL dan fitur diperlukan" });
-  }
-
-  if (fitur === 'youtube') {
-    if (!format || ![...formatAudio, ...formatVideo].includes(format)) {
-      return res.status(400).json({ success: false, message: "Format tidak valid untuk YouTube" });
-    }
-
-    const result = await youtubeDownloader.download(url, format);
-    res.json(result);
-
-  } else if (fitur === 'applemusic') {
-    const result = await appleMusicDownloader(url);
-    res.json(result);
-
+module.exports = (req, res) => {
+  if (req.method === 'GET') {
+    return appledown.download(req, res);
   } else {
-    res.status(400).json({ success: false, message: "Fitur tidak valid, pilih 'youtube' atau 'applemusic'" });
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Mendukung CORS untuk OPTIONS
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(405).send('Method Not Allowed');
   }
-});
-
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+};
